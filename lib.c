@@ -234,14 +234,84 @@ int GetNetSegment(const char *pIpAddr, const char *pMask, char *pNetSeg)
     return 1;
 }
 
+/*according to function of find_pid_by_name, in busybox0.6.3/libbb/find_pid_by_name.c*/
+/*maybe define a list which member num is big enough, or encounter seg fault*/
+#include <dirent.h>
+#include <fcntl.h>
+int private_find_pid_by_name(char* pidName, long *pidList)
+{
+    DIR *dir;
+    struct dirent *next;
+    FILE *status = NULL;
+    char filename[128];
+    char buffer[128];
+    char name[128];
+    
+    int i = 0;
 
+    if (pidList == NULL)
+    {
+        return (2);
+    }
+
+    dir = opendir("/proc");
+    if (!dir)
+    {
+        printf("Cannot open /proc");
+        return (1);
+    }
+
+    while ((next = readdir(dir)) != NULL)
+    {
+        memset(filename, 0, sizeof(filename));
+        memset(buffer, 0, sizeof(buffer));
+        memset(name, 0, sizeof(name));
+
+        /* Must skip ".." since that is outside /proc */
+        if (strcmp(next->d_name, "..") == 0)
+        {
+            continue;
+        }
+
+        /* If it isn't a number, we don't want it */
+        if (!isdigit(*next->d_name))
+        {
+            continue;
+        }
+
+        sprintf(filename, "/proc/%s/status", next->d_name);
+        if (! (status = fopen(filename, "r")) )
+        {
+            continue;
+        }
+        if (fgets(buffer, 128-1, status) == NULL)
+        {
+            fclose(status);
+            continue;
+        }
+        fclose(status);
+
+        /* Buffer should contain a string like "Name:   binary_name" */
+        sscanf(buffer, "%*s %s", name);
+        if (strcmp(name, pidName) == 0)
+        {
+            pidList[i++] = strtol(next->d_name, NULL, 0);
+        }
+    }
+
+    return (0);
+}
 /* main  for test*/
 int main()
 {
     unsigned int a =0;
-    if (IsValidMacAddress("00:02:03:ef:44:66"))
+    long pidList[3] = {0};
+    if (private_find_pid_by_name("smbd", pidList) == 0)
     {
-        printf("SYS_OK");
+        printf("SYS_OK\n");
+		printf("pid[0] %ld\n", pidList[0]);
+		printf("pid[1] %ld\n", pidList[1]);
+		printf("pid[2] %ld\n", pidList[2]);
     }
 }
 
