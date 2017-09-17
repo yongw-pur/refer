@@ -203,7 +203,14 @@ int GetFileSize(const char *filePath)
 
     return (filesize);  
 }
-
+/*************************************
+get the specified net seg
+[IN]  pIpAddr: ipaddr of net
+      pMask: net mask 
+[OUT] pNetSeg:the net seg like 192.168.144.0/24
+[RET] 0:the value is invalid
+      1:the value is valid
+**************************************/
 int GetNetSegment(const char *pIpAddr, const char *pMask, char *pNetSeg)
 {
     unsigned int  ip[4];   
@@ -238,6 +245,12 @@ int GetNetSegment(const char *pIpAddr, const char *pMask, char *pNetSeg)
 /*maybe define a list which member num is big enough, or encounter seg fault*/
 #include <dirent.h>
 #include <fcntl.h>
+/*************************************
+find the pid according to name
+[IN]  pidName: pidName
+[OUT] pidList:the pidllist of pidname
+[RET] 0: success
+**************************************/
 int private_find_pid_by_name(char* pidName, long *pidList)
 {
     DIR *dir;
@@ -301,10 +314,348 @@ int private_find_pid_by_name(char* pidName, long *pidList)
 
     return (0);
 }
+
+/*interface opration*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <arpa/inet.h> /*htonl htons ntohs */
+#include <sys/ioctl.h>
+#include <net/if.h>
+/*************************************
+get and print all net device infomation
+[RET] 0: success
+**************************************/
+int get_all_net_info()
+{
+	int i=0,j=0;
+    int sock;
+    struct ifreq *ifr;
+    struct ifconf ifc;
+    char buf[512];
+
+
+    if((sock = socket(AF_INET, SOCK_DGRAM, 0))<0)
+    {
+        perror("socket");
+        exit(1);
+    }  
+    /* 获取所有套接字接口 */
+    ifc.ifc_len = sizeof(buf);
+    ifc.ifc_buf = buf;
+    if (ioctl(sock, SIOCGIFCONF, (char *) &ifc) < 0)
+    {
+        perror("ioctl-conf:");
+        return -1;
+    }
+    ifr = ifc.ifc_req;
+
+    for(i=(ifc.ifc_len/sizeof(struct ifreq)),j=1; i>0; i--,j++)
+    {
+        /* 获得第j个网络接口名称 */
+        ifr->ifr_ifindex = j;
+        if(ioctl(sock, SIOCGIFNAME, (char *)ifr)<0) {perror("NET Name error!");exit(-1);}   
+        printf("name (SIOCGIFNAME)= %s\n", ifr->ifr_name);
+
+        /* 获得网卡eth0参数 */
+        if (!strcmp(ifr->ifr_name, "eth0"))
+        {
+            if (ioctl(sock, SIOCGIFFLAGS, (char *)ifr) < 0){perror("Find eth0  error!");exit(-1);}  
+            printf("Find eth0  (SIOCGIFFLAGS) = %d\n", ifr->ifr_flags);
+        }
+
+        /* 获得MTU */
+        if(ioctl(sock, SIOCGIFMTU, (char *)ifr)<0) {perror("MTU error!");exit(-1);} 
+        printf("MTU (SIOCGIFMTU)= %d\n", ifr->ifr_mtu);
+
+        /* 获得MAC地址 */
+        if(ioctl(sock, SIOCGIFHWADDR, (char *)ifr)<0) {perror("MAC error!");exit(-1);}  
+        char  *hw = ifr->ifr_hwaddr.sa_data;
+        printf("MAC (SIOCGIFHWADDR)= %02x:%02x:%02x:%02x:%02x:%02x\n", hw[0],hw[1]&0xff,hw[2],hw[3],hw[4],hw[5]);
+
+        /* 查询本地IP */
+        if(ioctl(sock, SIOCGIFADDR, (char *)ifr)<0) {perror("Local IP error!");exit(-1);}       
+        printf("local addr (SIOCGIFADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+
+        /* 查询广播IP */
+        if(ioctl(sock, SIOCGIFBRDADDR, (char *)ifr)<0) {perror("Broadcast error!");exit(-1);}       
+        printf("broadcast addr (SIOCGIFBRDADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+
+        /* 查询目的IP */
+        if(ioctl(sock, SIOCGIFDSTADDR, (char *)ifr)<0) {perror("Dst IP error!");exit(-1);}  
+        printf("dst addr (SIOCGIFDSTADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+
+        /* 查询子网掩码 */
+        if(ioctl(sock, SIOCGIFNETMASK, (char *)ifr)<0) {perror("SUB Mask error!");exit(-1);}    
+        printf("mask addr (SIOCGIFNETMASK) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr->ifr_addr))->sin_addr));
+        ifr++;
+        printf("\n");
+    }
+    return 0;
+}
+
+/*************************************
+get specified dev info
+[IN] devName:net dev name such as eht0
+[RET] 0: success
+**************************************/
+int get_net_info(char *devName)
+{
+    int sock;
+    struct ifreq ifr;
+
+    if((sock = socket(AF_INET, SOCK_DGRAM, 0))<0)
+    {
+        perror("socket");
+        exit(1);
+    }  
+    
+	//querying info according to name or ifr_ifindex is ok
+	strcpy(ifr.ifr_name, devName); 
+	
+	/* 获得MTU */
+	if(ioctl(sock, SIOCGIFMTU, &ifr)<0) {perror("MTU error!");exit(-1);} 
+	printf("MTU (SIOCGIFMTU)= %d\n", ifr.ifr_mtu);
+	
+	/* 获得MAC地址 */
+	if(ioctl(sock, SIOCGIFHWADDR, &ifr)<0) {perror("MAC error!");exit(-1);}  
+	char  *hw = ifr.ifr_hwaddr.sa_data;
+	printf("MAC (SIOCGIFHWADDR)= %02x:%02x:%02x:%02x:%02x:%02x\n", hw[0],hw[1]&0xff,hw[2],hw[3],hw[4],hw[5]);
+	
+	/* 查询本地IP */
+	if(ioctl(sock, SIOCGIFADDR, &ifr)<0) {perror("Local IP error!");exit(-1);}       
+	printf("local addr (SIOCGIFADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr.ifr_addr))->sin_addr));
+	
+	/* 查询广播IP */
+	if(ioctl(sock, SIOCGIFBRDADDR, &ifr)<0) {perror("Broadcast error!");exit(-1);}       
+	printf("broadcast addr (SIOCGIFBRDADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr.ifr_addr))->sin_addr));
+	
+	/* 查询目的IP */
+	if(ioctl(sock, SIOCGIFDSTADDR, &ifr)<0) {perror("Dst IP error!");exit(-1);}  
+	printf("dst addr (SIOCGIFDSTADDR) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr.ifr_addr))->sin_addr));
+	
+	/* 查询子网掩码 */
+	if(ioctl(sock, SIOCGIFNETMASK, &ifr)<0) {perror("SUB Mask error!");exit(-1);}    
+	printf("mask addr (SIOCGIFNETMASK) = %s\n", inet_ntoa(((struct sockaddr_in*)&(ifr.ifr_addr))->sin_addr));
+    return 0;
+}
+
+/*************************************
+pull specified dev up or down
+[IN] interface_name:net dev name such as eht0
+     up:the stae to set
+        0: down
+        1: up 
+[RET] 0: success
+**************************************/
+int interface_updown(char *interface_name, int up)
+{
+    int s = 0;
+    int  flag = 0;
+    struct ifreq ifr;
+
+    memset(&ifr, 0x00, sizeof(ifr));
+    if(strcmp(interface_name, "lo") == 0)
+    {
+        printf("can't pull down interface lo");
+        return (1);
+    }
+
+    if((s = socket(AF_INET,SOCK_DGRAM,0)) < 0)
+    {
+        printf("socket failure: %s", strerror(errno));
+        return (1);
+    }
+
+    strcpy(ifr.ifr_name,interface_name);
+
+    if(ioctl(s, SIOCGIFFLAGS, &ifr) < 0)
+    {
+        printf("SIOCGIFFLAGS failure: %s", strerror(errno));
+        close(s);
+        return (1);
+    }
+
+    if(up)
+    {
+        flag = IFF_UP|IFF_PROMISC;
+        ifr.ifr_ifru.ifru_flags |= flag;
+    }
+    else
+    {
+        flag = ~IFF_UP;
+        ifr.ifr_ifru.ifru_flags &= flag;
+    }
+
+    if(ioctl(s, SIOCSIFFLAGS, &ifr) < 0)
+    {
+        printf("SIOCSIFFLAGS failure: %s", strerror(errno));
+        return (1);
+    }
+
+	/*********************************
+        set function
+        sin = (struct sockaddr_in *)&ifr.ifr_addr;
+	sin->sin_family = AF_INET;
+	sprintf(ipaddr, "%d.%d.%d.%d", ipaddr[0], ipaddr[1], 
+	ipaddr[2], ipaddr[3]);
+	inet_pton(AF_INET, ipaddr, &sin->sin_addr);
+	ioctl(skfd, SIOCSIFADDR, &ifr);
+
+    if_down()
+	ifr.ifr_hwaddr.sa_family = AF_UNIX;
+        memcpy(&ifr.ifr_hwaddr.sa_data, &hwaddr, MAC_ADDR_LEN(6));  
+    if (ioctl(skfd, SIOCSIFHWADDR, &ifr) < 0)
+	if_up()
+	**********************************/
+    close(s);
+    return (0);
+}
+
+/*************************************
+excute cmd security
+[IN] cmd:the cmd to excute
+     just like run cmd in shell
+[RET] 0: success
+**************************************/
+int exeCmd(const char *cmd) 
+{
+	pid_t status;
+
+	status = system(cmd);
+	if (-1 == status)
+	{
+		printf("system error!");
+	}
+	else
+	{
+		printf("exit status value = [0x%x]\n", status);
+		
+		if (WIFEXITED(status))
+		{
+			if (0 == WEXITSTATUS(status))
+			{
+				printf("run CMD script successfully.\n");
+				return 0;
+			}
+			else
+			{
+				printf("run CMD=[%s] script fail, script exit code: %d\n", cmd,WEXITSTATUS(status));
+			}
+		}
+		else
+		{
+			printf("exit status = [%d]\n", WEXITSTATUS(status));
+		}
+	}
+
+	return -1;
+}
+
+/*************************************
+get default gateway using proc file
+[OUT] gw:unsigned long type of gateway
+[RET] 0: success
+**************************************/
+int get_defaultgw (unsigned long *gw)
+{
+    FILE *fp;
+    int ret = -1, r;
+    char line[256];
+    char devname[64], flags[16], *sdest, *sgw;
+    unsigned long d, g, m;
+    int flgs, ref, use, metric, mtu, win, ir;
+    fp = fopen("/proc/net/route" , "r");
+
+    /* Skip the first line. */
+    /*if (fscanf(fp, "%*[^\n]\n") < 0) 
+    {
+		return -1;
+    }*/
+    if (fgets(line , sizeof(line) , fp) < 0)
+    {
+        goto EXIT;
+    }
+    
+    while(fgets(line , sizeof(line) , fp))
+    {
+        r = sscanf(line, "%63s%lx%lx%X%d%d%d%lx%d%d%d\n",
+		   devname, &d, &g, &flgs, &ref, &use, &metric, &m,
+		   &mtu, &win, &ir);
+        printf("devname %s \tdest %lu\t gw %lu\n", devname, d, g);
+        printf("gwwww%s\n",  inet_ntoa(*(struct in_addr*)&g));
+        if(11 == r && d == 0)
+        {
+            ret = 0;
+            *gw = g;
+            goto EXIT;
+        }
+    }
+
+EXIT:
+    fclose(fp);
+    printf("ret %d\n", ret);
+    return ret;
+}
+
+//使用sscanf读取数据
+/*scanf的format字符串：
+空格：也会同样去过滤输入字符串的空格，而且会持续过滤，直到不是空格为止。（空格也包括tab，回车等）
+其他字符，（不包括%）：会同样在输入字符里面跳过想用的字符。
+%：控制输入一个字段，根据后面的长度，控制符读取数据内容。比如%d等。
+%*：会跳过一个输入字段，比如sscanf("123  456","%*d %d",&data); data读取会是456；
+%[0-9]:贪婪的读取0-9的字符，作为一个string读取
+%[^0-9]:贪婪的读取非0-9的字符，作为一个string读取*/
+/*************************************
+get default gateway using popen
+[OUT] gw:sring type of gateway
+[RET] 0: success
+**************************************/
+int get_defaultgw_2 (char *gw)
+{
+    FILE *fp;  
+    char buf[512];  
+    char cmd[128]; 
+    char dst[30];    
+    char *tmp;  
+  
+    strcpy(cmd, "route -n");  
+    fp = popen(cmd, "r");   
+    if(NULL == fp)  
+    {  
+        perror("popen error");  
+        return -1;  
+    }
+      
+    if (fgets(buf , sizeof(buf) , fp) < 0)
+    {
+        pclose(fp);
+        return -1;
+    } 
+
+    while(fgets(buf, sizeof(buf), fp) != NULL)  
+    {  
+        tmp =buf; 
+        while(*tmp && isspace(*tmp))  
+            ++ tmp;  
+        if(strncmp(tmp, "0.0.0.0", strlen("0.0.0.0")) == 0)  
+            break;  
+    }  
+    sscanf(buf, "%*s%s", gw);   //%*s skip first str      
+    printf("default gateway:%s\n", gw);  
+    pclose(fp); 
+    return 0;  
+}
+
 /* main  for test*/
 int main()
 {
     unsigned int a =0;
+    get_all_net_info();
+    exeCmd("ls -a");
+    /*unsigned int a =0;
     long pidList[3] = {0};
     if (private_find_pid_by_name("smbd", pidList) == 0)
     {
@@ -312,6 +663,26 @@ int main()
 		printf("pid[0] %ld\n", pidList[0]);
 		printf("pid[1] %ld\n", pidList[1]);
 		printf("pid[2] %ld\n", pidList[2]);
-    }
+    }*/
 }
 
+#include <asm/types.h>
+#include <netinet/ether.h>
+#include <netinet/in.h>
+#include <net/if.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <linux/netlink.h>
+#include <linux/rtnetlink.h>
+#include <sys/types.h>
+
+#define BUFSIZE 8192
+
+
+struct route_info{
+ u_int dstAddr;
+ u_int srcAddr;
+ u_int gateWay;
+ char ifName[IF_NAMESIZE];
+};
