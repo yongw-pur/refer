@@ -177,6 +177,146 @@ int strtoul_ret(char *str, char **endptr, int base, unsigned long *val)
 }
 
 
+static const unsigned int IPADDR_LEN  = 15;//IP地址长度
+static const unsigned int MACADDR_LEN = 17;//MAC地址长度
+/**
+ *判断字符是否为十六进制表示字符，即0~f。
+ */
+int IsHexChar(char hex)
+{
+    return ( ( hex >= '0' && hex <= '9' )    ||
+                ( hex >= 'a' && hex <= 'f' ) ||
+                ( hex >= 'A' && hex <= 'F' ) );
+}
+
+int HexCharToInt(char hex)
+{
+    int val = -1;
+
+    if( hex >= '0' && hex <= '9' )
+    {
+        val = hex - '0';
+    }
+    else if( hex >= 'a' && hex <= 'f' ) 
+    {
+        val = hex - 'a' + 10;
+    }
+    else if( hex >= 'A' && hex <= 'F' )
+    {
+        val = hex - 'A' + 10;
+    }
+
+    return val;
+}
+
+/**
+ * 判断输入ip是否有效
+ * return 1   有效
+ *        0  无效
+ */
+ #include<arpa/inet.h> //inet_ntoa
+int IsIpValid(const char* pAddr)
+{
+    if ( NULL == pAddr )
+    {
+        return 0;
+    }
+    struct in_addr addr;
+    if ( inet_aton ( pAddr, &addr ) == 0 )
+    {
+        return 0;
+    }
+
+    char* destIp = ( char* ) inet_ntoa ( addr );
+    if ( 0 != strcmp ( pAddr, destIp ) )
+    {
+        return 0;
+    }
+
+    return 1;
+}
+
+/**
+  判断输入netmask字符串是否有效
+ * pNetMask    表示netmask的字符串指针
+ * return   1         有效
+ *          0         无效
+ */
+int IsMaskValid(const char* pNetMask)
+{
+    int i;
+    int ret = 0;
+
+    if ( !IsIpValid(pNetMask) )
+    {
+        return ret;
+    }
+
+    unsigned int mask = ntohl( inet_addr(pNetMask) );
+
+    //最高8位必须全为0，且不能为0xffffff
+    if ( mask < 0xff || mask == 0xffffffff )
+    {
+        return ret;
+    }
+
+    for (i = 23; i >= 0; --i )
+    {
+        if ( (mask & (1 << i)) > 0 )
+        {
+            continue;
+        }
+        if ( (mask << (8 + 23 - i)) > 0 )
+        {
+            ret = 0;
+            break;
+        }
+        ret = 1;
+        break;
+    }
+
+    return ret;
+}
+
+
+/**
+ *判断输入mac字符串是否有效,不管中间的分隔符
+ * pMac    表示mac地址的字符串指针
+ * return  1     有效
+ *         0     无效
+ */
+int IsMacValid(const char* pMac)
+{
+	unsigned int index;
+    if ( NULL == pMac || strlen ( pMac ) != MACADDR_LEN )
+    {
+        return 0;
+    }
+
+    //MAC的第一个字节必须为偶数
+    if( HexCharToInt(*(pMac+1)) % 2 != 0 )
+    {
+        return 0;
+    }
+
+    for ( index = 0; index < MACADDR_LEN; ++index )
+    {
+        if ( 0 == ( ( index + 1 ) % 3 ) ) //不检查间隔为3的字符
+        {
+            continue;
+        }
+
+        //字符必须为十六进制表示字符，即0~f。
+        char val = ( * ( pMac + index ) );
+        if ( !IsHexChar(val) )
+        {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
 /*************************************
 get the file size
 [IN]  filePath: the file path
@@ -324,6 +464,50 @@ int private_find_pid_by_name(char* pidName, long *pidList)
 #include <arpa/inet.h> /*htonl htons ntohs */
 #include <sys/ioctl.h>
 #include <net/if.h>
+/*************************************
+get net device down up status
+[IN]: devName
+[RET] 0: success
+
+tips:
+IFF_RUNNING is supposed to reflect the operational status on a network interface, rather than its administrative one. 
+To provide an example, an Ethernet interface may be brought UP by the administrator (e.g. ifconfig eth0 up), 
+but it will not be considered operational (i.e. RUNNING as per RFC2863) if the cable is not plugged in
+**************************************/
+int get_device_status(char* devName)
+{
+	int skfd = 0;
+	struct ifreq ifr;
+
+	skfd = socket(AF_INET, SOCK_DGRAM, 0);
+	if(skfd < 0) 
+	{
+		printf("%s:%d Open socket error!\n", __FILE__, __LINE__);
+		return 0;
+	}
+
+	strcpy(ifr.ifr_name, devName);
+
+	if(ioctl(skfd, SIOCGIFFLAGS, &ifr) <0 )
+	{
+		printf("%s:%d IOCTL error!\n", __FILE__, __LINE__);
+		printf("Maybe ethernet inferface %s is not valid!", ifr.ifr_name);
+		close(skfd);
+		return 0;
+	}
+
+	if(ifr.ifr_flags & IFF_RUNNING) //IFF_UP
+	{
+			printf ("UP\n");
+			return 1;
+	} 
+	else 
+	{
+			printf ("DOWN\n");
+			return 0;
+	}
+}
+
 /*************************************
 get and print all net device infomation
 [RET] 0: success
@@ -585,7 +769,7 @@ int get_defaultgw (unsigned long *gw)
 		   devname, &d, &g, &flgs, &ref, &use, &metric, &m,
 		   &mtu, &win, &ir);
         printf("devname %s \tdest %lu\t gw %lu\n", devname, d, g);
-        printf("gwwww%s\n",  inet_ntoa(*(struct in_addr*)&g));
+        printf("gw is %s\n",  inet_ntoa(*(struct in_addr*)&g));
         if(11 == r && d == 0)
         {
             ret = 0;
@@ -649,6 +833,42 @@ int get_defaultgw_2 (char *gw)
     return 0;  
 }
 
+/*****************************************
+print the function stack info in user space
+compile with gcc  -rdynamic -o lib lib.c to show funcname
+get line number: addr2line 0x804a45c -e ./lib -f (use -g compile before)
+
+use dump_stack() to print stack in kernel space
+/arch/mips/kernel/traps.c dump_stack()
+/include/linux/kallsyms.h print_ip_sym
+CONFIG_KALLSYMS=y to show funcname
+*****************************************/
+#include <execinfo.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#define MAX_STACK_LAYERS 20
+void print_trace (void)
+{
+    void *array[MAX_STACK_LAYERS];
+    size_t size;
+    char **strings;
+    size_t i;
+    size = backtrace (array, MAX_STACK_LAYERS);
+    strings = backtrace_symbols (array, size);
+    if (NULL == strings)
+    {
+        perror("backtrace_synbols");
+        exit(0);
+    }
+ 
+    printf ("Obtained %zd stack frames.\n", size);
+    for (i = 0; i < size; i++)
+        printf ("%s\n", strings[i]);
+ 
+    free (strings);
+    strings = NULL;
+}
+
 /* main  for test*/
 int main()
 {
@@ -665,24 +885,3 @@ int main()
 		printf("pid[2] %ld\n", pidList[2]);
     }*/
 }
-
-#include <asm/types.h>
-#include <netinet/ether.h>
-#include <netinet/in.h>
-#include <net/if.h>
-#include <stdio.h>
-#include <sys/socket.h>
-#include <sys/ioctl.h>
-#include <linux/netlink.h>
-#include <linux/rtnetlink.h>
-#include <sys/types.h>
-
-#define BUFSIZE 8192
-
-
-struct route_info{
- u_int dstAddr;
- u_int srcAddr;
- u_int gateWay;
- char ifName[IF_NAMESIZE];
-};
