@@ -626,6 +626,77 @@ int get_net_info(char *devName)
     return 0;
 }
 
+/*******************************
+get device info including ipv4, ipv6, mac addr
+
+all the dev information are linked by the same structure ifaddrs:
+first all mac info, second all ipv4 info including mask, third all ipv6 info
+[IN] interface name
+[RET] 0 success
+*******************************/
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netpacket/packet.h>//sockaddr_ll
+int get_device_info(char *devName)
+{
+    int i, len;
+    char ipv6Str[40] = {0};
+    char ipv4Str[16] = {0};
+    char addrbuf[18] = {0};
+	struct ifaddrs *pDev, *pDevAddr;
+
+	if (!devName)
+    {   
+        return -1;
+	}
+
+    getifaddrs(&pDevAddr);
+    for (pDev = pDevAddr; pDev; pDev = pDev->ifa_next)
+    {
+        if (!pDev->ifa_addr || strcmp(pDev->ifa_name, devName) != 0)
+        {
+            continue;
+        }
+
+        if (pDev->ifa_addr->sa_family ==  AF_PACKET)
+        { 
+            struct sockaddr_ll *sll = (struct sockaddr_ll*)(pDev->ifa_addr);
+            for (i=0,len=0; i<6; i++)
+            {
+               len += sprintf (addrbuf+len, "%02x%s", sll->sll_addr[i], i<5?":":" ");
+            }
+            printf("MAC %s\n", addrbuf);  
+        }
+
+        if(pDev->ifa_addr->sa_family == AF_INET6)
+        {
+            struct sockaddr_in6 *in6 = (struct sockaddr_in6*)(pDev->ifa_addr);
+            inet_ntop(AF_INET6, (void *)&(in6->sin6_addr), ipv6Str, 40);
+            printf("ipv6 addr %s\n", ipv6Str);
+
+            in6 = (struct sockaddr_in6*)(pDev->ifa_netmask);
+            inet_ntop(AF_INET6, (void *)&(in6->sin6_addr), ipv6Str, 40);
+            printf("netmask %s\n", ipv6Str);
+        }
+
+        if (pDev->ifa_addr->sa_family == AF_INET)
+        {
+            struct sockaddr_in *in = (struct sockaddr_in *)(pDev->ifa_addr);
+            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, sizeof(struct sockaddr_in));
+            printf("ipv4 addr %s\n", ipv4Str);
+
+            in = (struct sockaddr_in *)(pDev->ifa_netmask);
+            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, sizeof(struct sockaddr_in));
+            printf("netmask %s\n", ipv4Str);
+        }
+    }
+
+    freeifaddrs(pDevAddr);
+    return 1;
+}
+
 /*************************************
 pull specified dev up or down
 [IN] interface_name:net dev name such as eht0
