@@ -20,6 +20,12 @@ COMMON INCLUDE FILES
 #include <stdio.h>       //printf/sscanf
 #define DEBUG 1
 
+#define SAFE_FREE(str) do{\
+    if(str){\
+        free(str);\
+        str = NULL;}\
+}while(0)
+
 /*************************************
 judge the given string is submask
 [IN]  mask: the string to judge
@@ -455,6 +461,225 @@ int private_find_pid_by_name(char* pidName, long *pidList)
     return (0);
 }
 
+/**********
+Calculate the timediff to exphour, considering GMT-TimeZone
+Get rand offset of period
+***********/
+#include <time.h>
+/*+8:15*/
+int GetRevisedTime(char *gmt)
+{
+    int hour;
+    int min;
+    int ret = 0;
+
+    if(gmt == NULL)
+    {
+        return 0;
+    }
+
+    if (sscanf(gmt + 1, "%d:%d", &hour, &min) != 2)
+    {
+        return 0;
+    }
+    
+    switch (gmt[0])
+    {
+        case '-':
+            ret -= hour * 3600 + min * 60;
+            break;
+        case '+':
+            ret += hour * 3600 + min * 60;
+            break;
+    }
+    
+    return ret;
+}
+
+int GetTimeOut(int exphour, char *timeZone)
+{
+    time_t timep;
+    struct tm *p;
+    int revisedTime;
+    int timediff;
+
+    revisedTime = GetRevisedTime(timeZone);
+    printf("revised %d\n", revisedTime);
+    
+    time(&timep);
+    timep = timep + revisedTime;
+    p = localtime(&timep);
+
+    //printf("%d%d%d ",(1900+p->tm_year), (1+p->tm_mon),p->tm_mday);
+    //printf("%d;%d;%d\n", p->tm_hour, p->tm_min, p->tm_sec);
+
+    p->tm_hour = exphour;
+    p->tm_min = 0;
+    p->tm_sec = 0;
+
+    if (mktime(p) - timep > 0)
+    {
+        timediff = mktime(p) - timep;
+    }
+    else
+    {
+        p->tm_mday += 1; //mktime(p) - timep + 86400;
+        timediff = mktime(p) - timep;
+    }
+
+    return timediff;
+}
+
+int GetRandOffset(int start, int end)
+{
+    int hour;
+    int randnum; 
+    float radix;
+
+    srandom((unsigned int)time(NULL));
+    hour = start < end? end - start: end + 24 - start;
+    radix = hour * 60 * 6;  //get max rand number,10s as a unit
+    randnum = 1 + (int)(radix * rand()/(RAND_MAX + 1.0));
+
+    printf("hour %d, radix %f, randnum %d offset %d\n", hour, radix, randnum, randnum * 10);
+    return randnum * 10;
+} 
+
+void GetTimeDiff(int startTime, int endTime)
+{
+    int offset;
+    int timeStart;
+    int timediff;
+    
+    timeStart = GetTimeOut(startTime, "+1:00");
+    offset = GetRandOffset(startTime, endTime);
+    timediff = timeStart + offset;
+    printf("GetTimeDiff timeStart %d timediff %d\n",timeStart, timediff);
+}
+
+/*****************
+A varible length of buffer
+*****************/
+typedef struct  {
+  char *buffer;
+  int max;
+  int used;
+}Send_buffer;
+
+Send_buffer *Send_buffer_init()
+{
+    return calloc(1, sizeof(Send_buffer));
+}
+
+void Send_buffer_Cleanup(Send_buffer *buf)
+{
+    free(buf->buffer);
+    free(buf);
+}
+
+int Add_buffer(Send_buffer *in, const void *inptr, int size)
+{
+  char *new_rb;
+  int new_size;
+
+  if(!in->buffer || ((in->used + size) > (in->max - 1))) 
+  {
+    new_size = (in->used + size) * 2;
+    if(in->buffer)
+    {
+      /* we have a buffer, enlarge the existing one */
+       new_rb = realloc(in->buffer, new_size);
+    }
+    else
+    {
+      /*create a new buffer*/
+      new_rb = malloc(new_size);
+    }
+
+    if(!new_rb) 
+    {
+      /* If we failed, we cleanup the whole buffer and return error */
+      free(in);
+      return -1;//CURLE_OUT_OF_MEMORY
+    }
+
+    in->buffer = new_rb;
+    in->max = new_size;
+  }
+
+  memcpy(&in->buffer[in->used], inptr, size); //in->used start begin 0
+
+  in->used += size;
+  return 0;
+}
+
+int Send_Buffer_Ex()
+{
+    Send_buffer *buffer = NULL;
+    buffer = Send_buffer_init();
+    Add_buffer(buffer, "test", strlen("test"));
+    //write(fd, buffer->buffer, buffer->used);
+    Send_buffer_Cleanup(buffer);
+}
+
+/*****************
+get socket client sockaddr
+getpeername used to  get remote ip and port: conneced socket
+[IN]:socket fd
+[OUT]:client:the client sockaddr info
+*****************/
+int GetClientInfo(int fd, struct sockaddr_in *client)
+{
+    int len;
+    char ipstr[16] = {0};
+
+    len = sizeof(struct sockaddr_in);
+    memset(client, 0, sizeof(struct sockaddr_in));
+    if (getsockname(fd, (struct sockaddr *)client, &len) < 0)
+    {
+        return -1;
+    }
+
+    inet_ntop(AF_INET, &client->sin_addr, ipstr,sizeof(ipstr));
+    printf("local addr %s port %d\n", ipstr, ntohs(client->sin_port)) ;
+    return 0;
+}
+
+/*************************
+Build format string
+[IN]:format:string format
+[OUT]:pbuf:the pointer of buffer to keep str;need to free at last
+[OUT]:len:the total len of formart string,use strlen
+**************************/
+#include <stdarg.h> //va_start, va_end
+int Build_String(char **pbuf, int *len, const char *format, ...)
+{
+    va_list ap;
+    int length;
+    int mem_alloc = 1;
+    char *temp = NULL;
+    /* *buffer *must* be an empty/NULL buffer */
+    if (*pbuf != NULL)
+    {
+        return -1;
+    }
+
+    do
+    {
+        mem_alloc = mem_alloc * 2;
+        temp = realloc(temp, mem_alloc);
+        va_start(ap, format);
+        length = vsnprintf(temp, mem_alloc, format, ap);
+        va_end(ap);
+        printf("length %d, buffer %s\n", length, temp);
+    }while(length >= mem_alloc); 
+    //length为结果的strlen需要添加1字节'\0',函数会自动添加
+    //mem_alloc为空间的大小 length+1 > mem_alloc
+    *len = length;
+    *pbuf = temp;
+    return 0;
+}
+
 /*interface opration*/
 #include <stdio.h>
 #include <stdlib.h>
@@ -884,12 +1109,30 @@ int get_defaultgw_2 (char *gw)
         return -1;  
     }
       
-    if (fgets(buf , sizeof(buf) , fp) < 0)
+    if (fgets(buf, sizeof(buf), fp) < 0)
     {
         pclose(fp);
         return -1;
     } 
+    
+   /*文件读取
+    feof不仅适用于二进制打开，文本方式打开也适用
+    读出所有的数据之后，再读一次(读到结尾)，函数feof(fp)的返回值才为真
+    所以使用feof判断时，一般先读一行/字符
+    if (fgets(str,128,fp)!=NULL)
+    while (!feof(fp)) 
+    {
+        if (fgets(str,128,fp)!=NULL)
+        printf("%s",str);
+    }
 
+    inc ch;
+    while((ch=fgetc(fp))!= EOF)//只适用于文本文件，里面没有负值
+
+    while((n = fread(s, 1, 20, src)) == 20)
+        fwrite(s, 1, n, des3);
+    fwrite(s, 1, n, des3);
+    */
     while(fgets(buf, sizeof(buf), fp) != NULL)  
     {  
         tmp =buf; 
@@ -943,6 +1186,7 @@ void print_trace (void)
 /* main  for test*/
 int main()
 {
+
     unsigned int a =0;
     get_all_net_info();
     exeCmd("ls -a");

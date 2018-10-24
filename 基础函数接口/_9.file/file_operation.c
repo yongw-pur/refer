@@ -31,12 +31,12 @@ off_t lseek(int fildes,off_t offset ,int whence)
 
 int fgetc(FILE *stream)
 函数说明:从参数stream所指的文件中读取一个字符。若读到文件尾而无数据时便返回EOF
-返回值:getc()会返回读取到的字符，返回EOF则表示到了文件尾
+返回值:fgetc()会返回读取到的字符，返回EOF则表示到了文件尾
 
 char * fgets(char *s,int size,FILE *stream)
 函数说明:从参数stream所指的文件内读入字符并存到参数s所指的内存空间
          直到出现换行字符、读到文件尾或是已读了size-1个字符为止，最后会加上NULL作为字符串结束
-返回:成功则返回s指针，返回NULL则表示有错误发生
+返回:成功则返回s指针，返回NULL则表示有错误发生或者到达文件尾
 
 int ungetc(int c,FILE *stream)
 函数说明:将参数c字符写回参数stream所指定的文件流。这个写回的字符会由下一个读取文件流的函数取得
