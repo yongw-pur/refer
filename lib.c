@@ -976,17 +976,25 @@ int interface_updown(char *interface_name, int up)
     }
 
 	/*********************************
-        set function
-        sin = (struct sockaddr_in *)&ifr.ifr_addr;
+    set function
+    struct sockaddr_in *sin = NULL;
+    sin = (struct sockaddr_in *)&ifr.ifr_addr;
 	sin->sin_family = AF_INET;
 	sprintf(ipaddr, "%d.%d.%d.%d", ipaddr[0], ipaddr[1], 
 	ipaddr[2], ipaddr[3]);
 	inet_pton(AF_INET, ipaddr, &sin->sin_addr);
 	ioctl(skfd, SIOCSIFADDR, &ifr);
 
+    sin = (struct sockaddr_in *)&ifr.ifr_addr;
+    sin->sin_family = AF_INET;
+    sprintf(netmask, "%d.%d.%d.%d", netmask[0], netmask[1], 
+    netmask[2], netmask[3]);
+    inet_pton(AF_INET, netmask, &sin->sin_addr);
+    ioctl(skfd, SIOCSIFNETMASK, &ifr)
+    
     if_down()
 	ifr.ifr_hwaddr.sa_family = AF_UNIX;
-        memcpy(&ifr.ifr_hwaddr.sa_data, &hwaddr, MAC_ADDR_LEN(6));  
+    memcpy(&ifr.ifr_hwaddr.sa_data, &hwaddr, MAC_ADDR_LEN(6));  
     if (ioctl(skfd, SIOCSIFHWADDR, &ifr) < 0)
 	if_up()
 	**********************************/

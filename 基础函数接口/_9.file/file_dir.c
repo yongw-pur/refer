@@ -26,6 +26,7 @@ int ftruncate(int fd,off_t length)
 返回:执行成功则返回0，失败返回-1 
     EBADF 参数fd文件描述词为无效的或该文件已关闭。
     EINVAL 参数fd 为一socket 并非文件，或是该文件并非以写入模式打开
+    需要重新设置文件读写位置: lseek(fd,0,SEEK_SET);或者rewind
 
 int link (const char *oldpath,const char *newpath)
 函数说明:以参数newpath指定的名称来建立一个新的连接(硬连接)到参数oldpath所指定的已存在文件。如果参数newpath指定的名称为一已存在的文件则不会建立连接
