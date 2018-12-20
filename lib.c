@@ -909,11 +909,11 @@ int get_device_info(char *devName)
         if (pDev->ifa_addr->sa_family == AF_INET)
         {
             struct sockaddr_in *in = (struct sockaddr_in *)(pDev->ifa_addr);
-            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, sizeof(struct sockaddr_in));
+            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, 16);
             printf("ipv4 addr %s\n", ipv4Str);
 
             in = (struct sockaddr_in *)(pDev->ifa_netmask);
-            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, sizeof(struct sockaddr_in));
+            inet_ntop(AF_INET, (void *)&(in->sin_addr), ipv4Str, 16);
             printf("netmask %s\n", ipv4Str);
         }
     }
@@ -1154,6 +1154,58 @@ int get_defaultgw_2 (char *gw)
     pclose(fp); 
     return 0;  
 }
+
+/*************************************
+get system ram size
+[OUT] size: the ram size
+[RET] 0: success
+      1: failed
+**************************************/
+
+int GetActualSize(unsigned int size)
+{
+    unsigned int base;
+    
+    size = size/1024; //convert to MB
+    for (base = 1; size/base; base = base * 2);
+
+    return base;
+}
+
+int GetSystemDDRSize(unsigned int *size)
+{
+    FILE *fp = NULL;
+    char line[256] = {0};
+    char name[64] = {0};
+    unsigned int ddrSize = 0;
+    unsigned int tmpSize = 0;
+    
+    fp = fopen("/proc/meminfo", "r");
+    if (!fp)
+    {
+        return 1;
+    }
+    
+    while (fgets(line , sizeof(line) , fp) != NULL)
+    {
+        if (2 == sscanf(line, "%[^:]:%d%*s", name, &ddrSize)
+            && !strncasecmp(name, "MemTotal", strlen("MemTotal")))
+        {
+            tmpSize = ddrSize;
+            break;
+        }
+    }
+    fclose(fp);
+
+    if (tmpSize)
+    {
+        *size = GetActualSize(tmpSize);
+        return 0;
+    }
+
+    return 1;
+}
+
 
 /*****************************************
 print the function stack info in user space
