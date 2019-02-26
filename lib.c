@@ -101,6 +101,28 @@ int IsValidIpAddress(const char *ipAddr)
 }
 
 /*************************************
+ipaddr trans to str
+[IN]  ip: type int ip of char *
+[RET] buf: ipstr info
+**************************************/
+void IP_NumToStr(const unsigned char *ip, char *buf)
+{
+    sprintf(buf, "%u.%u.%u.%u", 
+        ip[0], ip[1], ip[2], ip[3]);
+}
+
+/*************************************
+mac trans to str
+[IN]  mac: 6 byte char * mac
+[RET] buf: macstr info
+**************************************/
+void MAC_NumToStr(const unsigned char *mac, char *buf)
+{
+    sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+}
+
+/*************************************
 judge the given string is macaddr
 [IN]  ipaddr: the string to judge
 [RET] 0:the value is invalid
