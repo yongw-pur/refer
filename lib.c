@@ -667,6 +667,98 @@ int GetClientInfo(int fd, struct sockaddr_in *client)
     return 0;
 }
 
+/************************
+varible size entry
+************************/
+typedef struct{
+    int age;
+    char name[10];
+}entry;
+
+typedef struct{
+    int amount;
+    int num;
+    entry *pEntry;
+}table;
+
+/*
+ *get unknown number entry
+ *[IN/OUT] pointer of table, change entry num 
+           and keep record of entry pointer
+ *[RET]:-1:failed;1: success   
+ */
+int GetTable(table *tab)
+{
+    int num;
+    int count;
+    int limit = 64;
+    entry *p = NULL;
+
+    num = 0;
+    tab->amount = 64;
+    tab->pEntry = (entry*)(malloc(sizeof(entry)*(tab->amount)));
+    if (!tab->pEntry)
+    {
+        return -1;
+    }
+
+    for(count = 0; count<limit; count++)
+    {
+        if(num >= tab->amount)
+        {
+            tab->amount *= 2;
+            p = realloc(tab->pEntry, tab->amount*sizeof(entry));
+            if (!p)
+            {
+                //这种情况下tab->pEntry空间还在，通过外部函数进行处理
+                return -1; 
+            }
+            /*清空alloc分配的更多的空间*/
+            memset(&p[num], 0, (tab->amount-num)*sizeof(entry));
+            tab->pEntry = p;
+        }
+        
+        tab->pEntry[num].age = count;
+        strcpy(tab->pEntry[num].name, "abc");
+        num++;
+    }
+
+    tab->num = num;
+    for (count=0; count < tab->num; count++)
+    {
+        printf("entry i %d age %d, entry name %s\n",
+            count, tab->pEntry[count].age, tab->pEntry[count].name);
+    }
+    return 1;
+}
+
+void GetAllEntry()
+{
+    int count;
+    table t;
+    table *pt = NULL;
+
+    memset(&t, 0, sizeof(t));
+    pt = &t;
+    if (GetTable(pt) != 1)
+    {
+        goto exit;
+    }
+
+    printf("count %d ,amount %d\n\n\n\n",pt->num, pt->amount);
+    for (count=0; count < pt->num; count++)
+    {
+        printf("entry i %d age %d, entry name %s\n",
+            count, pt->pEntry[count].age, pt->pEntry[count].name);
+    }
+
+exit:
+    if (pt->pEntry)
+    {
+        free(pt->pEntry);
+    }
+}
+
 /*************************
 Build format string
 [IN]:format:string format
@@ -689,7 +781,7 @@ int Build_String(char **pbuf, int *len, const char *format, ...)
     do
     {
         mem_alloc = mem_alloc * 2;
-        temp = realloc(temp, mem_alloc);
+        temp = realloc(temp, mem_alloc);//可能会照成realloc失败后，temp原先指向的地址丢失
         va_start(ap, format);
         length = vsnprintf(temp, mem_alloc, format, ap);
         va_end(ap);
@@ -1202,7 +1294,8 @@ int GetSystemDDRSize(unsigned int *size)
     unsigned int ddrSize = 0;
     unsigned int tmpSize = 0;
     
-    fp = fopen("/proc/meminfo", "r");
+    //使用ping ip -c 3替换，可以完成设备的ping测试
+    fp = fopen("/proc/meminfo", "r"); 
     if (!fp)
     {
         return 1;
@@ -1263,6 +1356,76 @@ void print_trace (void)
  
     free (strings);
     strings = NULL;
+}
+
+/*大端模式就是指把数据的高字节保存在内存的低地址
+ * get system type
+ *[OUT] 1:big endian
+ *      0:litte endian
+ */
+int Get_SystemType()
+{
+    int type;
+    
+    if (htons(1) == 1)
+    {
+        type = 1;
+        printf("big endian\n");
+    }
+    else
+    {
+        type = 0;
+        printf("little endian\n");
+    }
+
+    return type;
+}
+
+int Get_SystemType2()
+{
+    int type;
+    int a = 1;
+
+    //&a获得低地址
+    if (*(char*)&a == 1)
+    {
+        type = 0;
+        printf("little endian\n");
+    }
+    else
+    {
+        type = 1;
+        printf("big endian\n"); 
+    }
+    
+    return type;  
+}
+
+//联合体用来存储ip地址 
+//联合体所有数据共享一块地址空间，存放数据的所有成员都是从低地址开始存放
+union Endian
+{
+    int a;
+    char b;
+};
+int Get_SystemType3()
+{
+    int type;
+    union Endian t;
+    
+    t.a = 1;
+    if (t.b == 1)
+    {
+        type = 0;
+        printf("little endian\n");
+    }
+    else
+    {
+        type = 1;
+        printf("big endian\n");
+    }
+    
+    return type;  
 }
 
 /* main  for test*/
