@@ -345,6 +345,32 @@ int IsMacValid(const char* pMac)
     return 1;
 }
 
+#include <arpa/inet.h>
+int IsIpSameSeg(char *ip, char *gateway, char *mask)
+{
+    /*in_addr_t
+     * struct in_addr{
+     *	 in_addr_t s_addr;
+     *  }
+     */
+    unsigned int addr1;
+    unsigned int addr2;
+    unsigned int imask;
+
+    /*判断参数是否合法*/
+    if (!ip || !gateway || !mask)
+    {
+        return -1;
+    }
+
+    addr1 = inet_addr(ip);
+    addr2 = inet_addr(gateway);
+    imask = inet_addr(mask);
+
+    return (addr1 & imask) == (addr2 & imask);
+
+}
+
 /*************************************
 get the file size
 [IN]  filePath: the file path
@@ -757,6 +783,86 @@ exit:
     {
         free(pt->pEntry);
     }
+}
+
+/**************
+  msg handler
+***************/
+typedef int (*Handler)(void);
+struct Table
+{
+    char name[20];
+    Handler handler;
+};
+
+struct MsgTable
+{
+    int num;
+    struct Table *table;
+};
+
+struct MsgTable msgTable;
+
+int process1()
+{
+    printf("process1\n");
+}
+
+int process2()
+{
+    printf("process2\n");
+}
+
+void RegisterHandler(char *name, Handler handler)
+{
+    struct Table *tmp;
+    tmp = (struct Table *)
+		realloc(msgTable.table,
+			   (msgTable.num + 1) *
+			   sizeof(struct Table));
+	if (tmp == NULL)
+		return ;
+
+    tmp[msgTable.num].handler = handler;
+    strcpy(tmp[msgTable.num].name, name);
+
+    msgTable.num++;
+    msgTable.table = tmp;
+
+    return ;
+}
+
+void InitMsgTable()
+{
+    memset(&msgTable, 0, sizeof(msgTable));
+    RegisterHandler("test1", process1);
+    RegisterHandler("test2", process2);
+}
+
+void CleanMsgTable()
+{
+    free(msgTable.table);
+}
+
+int HandleMsg(char *name)
+{
+    int index;
+    struct Table *entry;
+
+    entry = msgTable.table;
+    for (index = 0; index < msgTable.num; index++)
+    {
+        printf("msg type  %s recieve msg name %s\n", entry[index].name, name);
+        if (!strcmp(entry[index].name, name) )
+        {
+            if (entry[index].handler)
+            {
+                entry[index].handler();
+            }
+            return 1;
+        }
+    }
+    return -1;
 }
 
 /*************************
@@ -1435,6 +1541,10 @@ int main()
     unsigned int a =0;
     get_all_net_info();
     exeCmd("ls -a");
+
+    InitMsgTable();
+    HandleMsg("test1");
+
     /*unsigned int a =0;
     long pidList[3] = {0};
     if (private_find_pid_by_name("smbd", pidList) == 0)
